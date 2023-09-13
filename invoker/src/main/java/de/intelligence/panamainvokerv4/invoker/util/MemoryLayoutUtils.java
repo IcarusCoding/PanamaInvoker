@@ -1,11 +1,7 @@
 package de.intelligence.panamainvokerv4.invoker.util;
 
-import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.MemoryLayout;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.SegmentAllocator;
-import java.lang.foreign.SegmentScope;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.reflect.Field;
@@ -16,8 +12,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import jdk.jfr.MemoryAddress;
-
 import de.intelligence.panamainvokerv4.invoker.annotation.FieldOrder;
 import de.intelligence.panamainvokerv4.invoker.annotation.NativeStruct;
 import de.intelligence.panamainvokerv4.invoker.exception.NativeException;
@@ -27,7 +21,8 @@ import de.intelligence.panamainvokerv4.invoker.type.Pointer;
 
 public final class MemoryLayoutUtils {
 
-    private MemoryLayoutUtils() {}
+    private MemoryLayoutUtils() {
+    }
 
     public static FunctionDescriptor createMemoryLayout(Method method) {
         final Class<?>[] parameterTypes = method.getParameterTypes();
