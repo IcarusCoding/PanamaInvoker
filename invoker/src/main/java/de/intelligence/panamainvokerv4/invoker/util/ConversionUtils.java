@@ -132,6 +132,20 @@ public final class ConversionUtils {
         throw new NativeException("Failed to convert carrier to native layout representation: " + carrier.getCanonicalName());
     }
 
+    public static Object convertArg(Object arg) {
+        if (arg == null) {
+            return null;
+        }
+        final Class<?> argType = arg.getClass();
+        final TypeConverter converter = Panama.getConverters().getConverterInstance(argType);
+        if (converter != null) {
+            return converter.toNative(arg);
+        } else if (!ConversionUtils.isPrimitiveOrBoxedPrimitive(argType)) {
+            throw new NativeException("Cannot convert java type " + argType.getCanonicalName() + " to native type");
+        }
+        return arg;
+    }
+
     public static Object[] convertArgs(Object[] args) {
         if (args == null || args.length == 0) {
             return new Object[]{};
@@ -139,18 +153,7 @@ public final class ConversionUtils {
         final Object[] copy = new Object[args.length];
         System.arraycopy(args, 0, copy, 0, args.length);
         for (int i = 0; i < copy.length; i++) {
-            final Object arg = copy[i];
-            if (arg == null) {
-                continue;
-            }
-            final Class<?> argType = arg.getClass();
-
-            final TypeConverter converter = Panama.getConverters().getConverterInstance(argType);
-            if (converter != null) {
-                copy[i] = converter.toNative(arg);
-            } else if (!ConversionUtils.isPrimitiveOrBoxedPrimitive(argType)) {
-                throw new NativeException("Cannot convert java type " + argType.getCanonicalName() + " to native type");
-            }
+            copy[i] = convertArg(copy[i]);
         }
         return copy;
     }

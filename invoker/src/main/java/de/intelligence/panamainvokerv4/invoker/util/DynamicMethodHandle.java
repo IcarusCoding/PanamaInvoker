@@ -5,6 +5,7 @@ import java.lang.foreign.Linker;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SegmentAllocator;
+import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -99,7 +100,13 @@ public final class DynamicMethodHandle {
     }
 
     public static DynamicMethodHandle createVariadic(MemorySegment segment, MethodType methodType, FunctionDescriptor functionDescriptor) {
-        throw new UnsupportedOperationException("variadics are currently unsupported");
+        final MethodHandler methodHandler = new VariadicHandler(segment, functionDescriptor, methodType.returnType());
+        final MethodHandle targetHandle = MethodHandles.insertArguments(MethodHandler.Helper.INVOKE.bindTo(methodHandler)
+                .asCollector(Object[].class, functionDescriptor.argumentLayouts().size() + 1), 0, DEFAULT);
+        methodType = methodType.dropParameterTypes(methodType.parameterCount() - 1, methodType.parameterCount())
+                .appendParameterTypes(Object[].class);
+
+        return new DynamicMethodHandle(methodHandler, targetHandle.asType(methodType));
     }
 
     public interface MethodHandler {
@@ -156,7 +163,8 @@ public final class DynamicMethodHandle {
             this.preProcess(allocator, transformed);
             final Object retVal;
             try {
-                retVal = this.createHandle(allocator, transformed).invokeWithArguments(transformed);
+                final MethodHandle haaa = this.createHandle(allocator, transformed);
+                retVal = haaa.invokeWithArguments(transformed);
             } catch (Throwable ex) {
                 throw new NativeException("Failed to invoke native method", ex);
             }
@@ -198,6 +206,54 @@ public final class DynamicMethodHandle {
         @Override
         protected Object processReturn(Object retVal) {
             return ConversionUtils.convertReturnValue(this.retType, retVal);
+        }
+
+    }
+
+    private static final class VariadicHandler extends AutoConverterHandler {
+
+        private FunctionDescriptor fullDescriptor;
+
+        public VariadicHandler(MemorySegment segment, FunctionDescriptor functionDescriptor, Class<?> retType) {
+            super(segment, functionDescriptor, retType);
+        }
+
+        @Override
+        protected Object[] transformArgs(SegmentAllocator allocator, Object[] args) {
+            // TODO this can be done more efficiently
+            this.fullDescriptor = super.functionDescriptor;
+            final Object[] varargs = (Object[]) args[args.length - 1];
+            final Object[] fullArgs = new Object[args.length - 1 + varargs.length];
+            System.arraycopy(args, 0, fullArgs, 0, args.length - 1);
+            final Object[] convertedArgs = super.transformArgs(allocator, fullArgs);
+
+            for (int i = 0; i < varargs.length; i++) {
+                final Object vararg = varargs[i];
+                final Class<?> varargType = vararg.getClass();
+                if (!ConversionUtils.isTypeSupported(varargType)) {
+                    throw new NativeException("Parameter type " + varargType.getCanonicalName() + " is unsupported");
+                }
+                MemoryLayout layout = ConversionUtils.createMemoryLayout(varargType);
+                // primitive type promotion is necessary
+                if (layout instanceof ValueLayout valueLayout) {
+                    final Class<?> carrier = valueLayout.carrier();
+                    if (carrier == byte.class || carrier == char.class || carrier == short.class || carrier == int.class) {
+                        layout = ValueLayout.JAVA_LONG;
+                    } else if (carrier == float.class) {
+                        layout = ValueLayout.JAVA_DOUBLE;
+                    }
+                }
+                this.fullDescriptor = this.fullDescriptor.appendArgumentLayouts(layout);
+                varargs[i] = ConversionUtils.convertArg(vararg);
+            }
+            System.arraycopy(convertedArgs, 0, fullArgs, 0, convertedArgs.length);
+            System.arraycopy(varargs, 0, fullArgs, args.length - 1, varargs.length);
+            return fullArgs;
+        }
+
+        @Override
+        protected MethodHandle createHandle(SegmentAllocator allocator, Object[] args) {
+            return Linker.nativeLinker().downcallHandle(super.segment, this.fullDescriptor);
         }
 
     }
