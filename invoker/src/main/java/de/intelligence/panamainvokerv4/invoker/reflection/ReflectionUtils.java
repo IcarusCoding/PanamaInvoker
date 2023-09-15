@@ -1,14 +1,30 @@
 package de.intelligence.panamainvokerv4.invoker.reflection;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.List;
+
+import sun.misc.Unsafe;
 
 import de.intelligence.panamainvokerv4.invoker.annotation.meta.PanamaInterface;
 import de.intelligence.panamainvokerv4.invoker.exception.NativeException;
 import de.intelligence.panamainvokerv4.invoker.proxy.IProxyManager;
 
 public final class ReflectionUtils {
+
+    private static final Unsafe UNSAFE;
+
+    static {
+        final Field theUnsafe;
+        try {
+            theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            UNSAFE = (Unsafe) theUnsafe.get(null);
+        } catch (ReflectiveOperationException ex) {
+            throw new NativeException("Failed to retrieve unsafe", ex);
+        }
+    }
 
     public ReflectionUtils() {}
 
@@ -17,6 +33,15 @@ public final class ReflectionUtils {
         try {
             return (T) clazz.getConstructor().newInstance();
         } catch (ReflectiveOperationException ex) {
+            throw new NativeException("Failed to initialize class " + clazz.getCanonicalName(), ex);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> T newInstanceUnsafe(Class<?> clazz) {
+        try {
+            return (T) UNSAFE.allocateInstance(clazz);
+        } catch (InstantiationException ex) {
             throw new NativeException("Failed to initialize class " + clazz.getCanonicalName(), ex);
         }
     }

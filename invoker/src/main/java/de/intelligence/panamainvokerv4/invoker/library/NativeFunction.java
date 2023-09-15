@@ -1,83 +1,48 @@
 package de.intelligence.panamainvokerv4.invoker.library;
 
-import java.lang.foreign.FunctionDescriptor;
-import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
-import java.lang.invoke.MethodHandle;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 
-import de.intelligence.panamainvokerv4.invoker.Panama;
-import de.intelligence.panamainvokerv4.invoker.convert.TypeConverter;
-import de.intelligence.panamainvokerv4.invoker.exception.NativeException;
 import de.intelligence.panamainvokerv4.invoker.type.Pointer;
-import de.intelligence.panamainvokerv4.invoker.update.AutoReadable;
-import de.intelligence.panamainvokerv4.invoker.update.AutoWritable;
-import de.intelligence.panamainvokerv4.invoker.util.MemoryLayoutUtils;
+import de.intelligence.panamainvokerv4.invoker.util.DynamicMethodHandle;
 
 public final class NativeFunction extends Pointer {
 
-    private final String name;
     private final Method method;
-    private final MethodHandle nativeMethodHandle;
+    private final String name;
 
-    public NativeFunction(MemorySegment segment, Method method, String name, FunctionDescriptor descriptor) {
+    public NativeFunction(MemorySegment segment, Method method) {
         super(segment);
         this.method = method;
-        this.name = name;
-        this.nativeMethodHandle = Linker.nativeLinker().downcallHandle(segment, descriptor);
+        this.name = method.getName();
     }
 
-    public Object invoke(Object[] args) {
-        final Object returnValue;
+    public NativeFunction(Pointer funcPtr) {
+        super(funcPtr.getSegment());
+        this.method = null;
+        this.name = funcPtr.toString();
+    }
+
+    public static NativeFunction fromAddress(Pointer funcPtr) {
+        return new NativeFunction(funcPtr);
+    }
+
+    public static NativeFunction fromAddress(long address) {
+        return new NativeFunction(new Pointer(address));
+    }
+
+    public Object invoke(Class<?> retType, Object... args) {
+        final Object[] argsCopy = new Object[args == null ? 0 : args.length];
+        Class<?>[] classTypes = new Class[argsCopy.length];
         if (args != null) {
-            final Object[] argsCopy = new Object[args.length];
             System.arraycopy(args, 0, argsCopy, 0, args.length);
-
-            this.convertArgsInPlace(argsCopy);
-
-            try {
-                returnValue = this.nativeMethodHandle.invokeWithArguments(argsCopy);
-            } catch (Throwable ex) {
-                throw new NativeException("Failed to invoke native method", ex);
-            }
-            for (final Object arg : args) {
-                if (arg instanceof AutoReadable autoReadable) {
-                    autoReadable.autoRead(false);
-                }
-            }
-        } else {
-            try {
-                returnValue = this.nativeMethodHandle.invoke();
-            } catch (Throwable ex) {
-                throw new NativeException("Failed to invoke native method", ex);
-            }
+            classTypes = Arrays.stream(argsCopy).map(Object::getClass).toArray(Class<?>[]::new);
         }
-
-        final Class<?> returnType = this.method.getReturnType();
-        final TypeConverter converter = Panama.getConverters().getConverterInstance(returnType);
-        if (converter != null) {
-            return converter.toJava(returnValue);
+        if (this.method != null) {
+            return DynamicMethodHandle.auto(super.segment, this.method).invokeWithArguments(argsCopy);
         }
-        return returnValue;
-    }
-
-    private void convertArgsInPlace(Object[] args) {
-        for (int i = 0; i < args.length; i++) {
-            final Object arg = args[i];
-            if (arg == null) {
-                continue;
-            }
-            final Class<?> argType = arg.getClass();
-            final TypeConverter converter = Panama.getConverters().getConverterInstance(argType);
-            if (converter != null) {
-                args[i] = converter.toNative(arg);
-            } else if (!MemoryLayoutUtils.isPrimitiveOrBoxedPrimitive(argType)) {
-                throw new NativeException("Cannot convert java type " + argType.getCanonicalName() + " to native type");
-            }
-            if (arg instanceof AutoWritable autoWritable) {
-                autoWritable.autoWrite(true);
-            }
-        }
+        return DynamicMethodHandle.auto(this.segment, this.name, retType, classTypes, false).invokeWithArguments(argsCopy);
     }
 
     public String getName() {

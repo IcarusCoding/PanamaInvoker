@@ -28,7 +28,7 @@ public final class StructureUtils {
 
     public static Structure.StructureInfo createStructInfo(Class<? extends IStructure> structClass) {
         // 1. calculate memory layout
-        final StructLayout layout = MemoryLayoutUtils.convertStruct(structClass);
+        final StructLayout layout = ConversionUtils.convertStruct(structClass);
         // 2. create var handles
         final Map<Field, Structure.FieldInfo> fieldInfos = new HashMap<>();
         Arrays.stream(structClass.getDeclaredFields())

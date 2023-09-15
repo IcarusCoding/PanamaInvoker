@@ -1,9 +1,11 @@
 package de.intelligence.panamainvokerv4.invoker.convert;
 
 
+import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SegmentAllocator;
 import java.lang.foreign.SegmentScope;
+import java.lang.foreign.ValueLayout;
 
 public class DefaultTypeConverters extends TypeConvertersBase {
 
@@ -25,6 +27,11 @@ public class DefaultTypeConverters extends TypeConvertersBase {
         public Object toJava(Object nativeObj) {
             //TODO I dont like this
             return MemorySegment.ofAddress((long) nativeObj).getUtf8String(0);
+        }
+
+        @Override
+        public MemoryLayout getLayout() {
+            return ValueLayout.ADDRESS;
         }
 
     }

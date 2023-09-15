@@ -1,5 +1,6 @@
 package de.intelligence.panamainvokerv4.invoker.convert;
 
+import java.lang.foreign.MemoryLayout;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -34,13 +35,12 @@ public abstract class TypeConvertersBase implements ITypeConverters {
 
     public static final class NativeTypeConverter implements TypeConverter {
 
-
         private final Class<?> type;
         private final NativeType instance;
 
         public <T extends NativeType> NativeTypeConverter(Class<T> type) {
             this.type = type;
-            this.instance = ReflectionUtils.newInstance(type);
+            this.instance = ReflectionUtils.newInstanceUnsafe(type);
         }
 
         @Override
@@ -51,6 +51,11 @@ public abstract class TypeConvertersBase implements ITypeConverters {
         @Override
         public Object toJava(Object nativeObj) {
             return this.instance.toJava(nativeObj);
+        }
+
+        @Override
+        public MemoryLayout getLayout() {
+            return this.instance.getLayout();
         }
 
     }

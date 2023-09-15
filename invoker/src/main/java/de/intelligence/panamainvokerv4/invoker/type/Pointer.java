@@ -8,7 +8,7 @@ public class Pointer implements NativeType {
 
     public static Pointer NULL_PTR = new Pointer(0);
 
-    private MemorySegment segment;
+    protected MemorySegment segment;
 
     public Pointer() {
         this(MemorySegment.NULL);
@@ -59,6 +59,11 @@ public class Pointer implements NativeType {
     @Override
     public MemoryLayout getLayout() {
         return ValueLayout.ADDRESS;
+    }
+
+    @Override
+    public String toString() {
+        return this.segment.toString();
     }
 
 }

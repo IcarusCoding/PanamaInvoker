@@ -41,7 +41,7 @@ public final class NativeInterfaceProxyManager implements IProxyManager {
             if (method.getDeclaringClass() == Object.class) {
                 return method.invoke(this, args);
             }
-            return this.nativeLibrary.getFunction(method).invoke(args);
+            return this.nativeLibrary.getFunction(method).invoke(method.getReturnType(), args);
         }
 
     }

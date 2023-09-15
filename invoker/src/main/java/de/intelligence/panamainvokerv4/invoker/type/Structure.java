@@ -15,7 +15,7 @@ import java.util.Map;
 import de.intelligence.panamainvokerv4.invoker.convert.TypeConverter;
 import de.intelligence.panamainvokerv4.invoker.exception.NativeException;
 import de.intelligence.panamainvokerv4.invoker.update.UpdatePolicy;
-import de.intelligence.panamainvokerv4.invoker.util.MemoryLayoutUtils;
+import de.intelligence.panamainvokerv4.invoker.util.ConversionUtils;
 import de.intelligence.panamainvokerv4.invoker.util.StructureUtils;
 
 public abstract class Structure implements IStructure {
@@ -77,7 +77,7 @@ public abstract class Structure implements IStructure {
                 javaHandle.set(this, converter.toJava(nativeHandle.get(this.structMem.getSegment())));
                 continue;
             }
-            if (!MemoryLayoutUtils.isPrimitiveOrBoxedPrimitive(field.getType())) {
+            if (!ConversionUtils.isPrimitiveOrBoxedPrimitive(field.getType())) {
                 throw new NativeException("Cannot convert between java type " + field.getType().getCanonicalName() + " and native type");
             }
             javaHandle.set(this, nativeHandle.get(this.structMem.getSegment()));
@@ -95,7 +95,7 @@ public abstract class Structure implements IStructure {
             if (converter != null) {
                 nativeHandle.set(this.structMem.getSegment(), converter.toNative(javaHandle.get(this)));
             }
-            if (!MemoryLayoutUtils.isPrimitiveOrBoxedPrimitive(field.getType())) {
+            if (!ConversionUtils.isPrimitiveOrBoxedPrimitive(field.getType())) {
                 throw new NativeException("Cannot convert between java type " + field.getType().getCanonicalName() + " and native type");
             }
             nativeHandle.set(this.structMem.getSegment(), javaHandle.get(this));
