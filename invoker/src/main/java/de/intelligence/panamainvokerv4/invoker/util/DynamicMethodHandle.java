@@ -9,6 +9,7 @@ import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
@@ -163,8 +164,7 @@ public final class DynamicMethodHandle {
             this.preProcess(allocator, transformed);
             final Object retVal;
             try {
-                final MethodHandle haaa = this.createHandle(allocator, transformed);
-                retVal = haaa.invokeWithArguments(transformed);
+                retVal = this.createHandle(allocator, transformed).invokeWithArguments(transformed);
             } catch (Throwable ex) {
                 throw new NativeException("Failed to invoke native method", ex);
             }
@@ -196,9 +196,25 @@ public final class DynamicMethodHandle {
 
         @Override
         public void postProcess(Object[] args, Object[] transformed) {
-            for (final Object arg : args) {
+            for (int i = 0; i < args.length; i++) {
+                final Object arg = args[i];
                 if (arg instanceof AutoReadable autoReadable) {
                     autoReadable.autoRead(false);
+                }
+                // this is peak ugly and needs an architecture rewrite
+                // copying from off-heap to on-heap is necessary though
+                if (arg.getClass().isArray()) {
+                    final ValueLayout layout = (ValueLayout) ConversionUtils.createMemoryLayout(arg.getClass().getComponentType());
+                    try {
+                        final Method toArray = MemorySegment.class.getMethod("toArray", layout.getClass().getInterfaces()[0]);
+                        final Object array = toArray.invoke(transformed[i], layout);
+                        for (int j = 0; j < Array.getLength(arg); j++) {
+                            Array.set(arg, j, Array.get(array, j));
+                        }
+                    } catch (ReflectiveOperationException ex) {
+                        throw new NativeException("Failed to auto write to array ", ex);
+                    }
+
                 }
             }
         }

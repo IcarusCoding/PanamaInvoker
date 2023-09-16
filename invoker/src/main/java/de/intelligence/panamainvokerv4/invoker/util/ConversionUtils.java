@@ -1,9 +1,14 @@
 package de.intelligence.panamainvokerv4.invoker.util;
 
 import java.lang.foreign.MemoryLayout;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SegmentAllocator;
+import java.lang.foreign.SegmentScope;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.ValueLayout;
+import java.lang.reflect.Array;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -38,7 +43,8 @@ public final class ConversionUtils {
 
     public static boolean isTypeSupported(Class<?> clazz) {
         return isPrimitiveOrBoxedPrimitive(clazz) || isNativeType(clazz)
-                || Panama.getConverters().getConverterInstance(clazz) != null || clazz.equals(Object.class);
+                || Panama.getConverters().getConverterInstance(clazz) != null || isSupportedArray(clazz)
+                || clazz.equals(Object.class);
     }
 
     public static StructLayout convertStruct(Class<?> struct) {
@@ -122,7 +128,7 @@ public final class ConversionUtils {
         if (isPrimitiveOrBoxedPrimitive(carrier)) {
             return createForPrimitiveOrWrapper(carrier);
         }
-        if (isPrimitiveArray(carrier)) {
+        if (isSupportedArray(carrier)) {
             return ValueLayout.ADDRESS;
         }
         final TypeConverter converter = Panama.getConverters().getConverterInstance(carrier);
@@ -140,6 +146,8 @@ public final class ConversionUtils {
         final TypeConverter converter = Panama.getConverters().getConverterInstance(argType);
         if (converter != null) {
             return converter.toNative(arg);
+        } else if (ConversionUtils.isSupportedArray(argType)) {
+            return convertArray(arg);
         } else if (!ConversionUtils.isPrimitiveOrBoxedPrimitive(argType)) {
             throw new NativeException("Cannot convert java type " + argType.getCanonicalName() + " to native type");
         }
@@ -167,8 +175,61 @@ public final class ConversionUtils {
         return retVal;
     }
 
-    public static boolean isPrimitiveArray(Class<?> carrier) {
-        return carrier.isArray() && carrier.getComponentType().isPrimitive();
+    public static boolean isSupportedArray(Class<?> carrier) {
+        return carrier.isArray() && isPrimitiveOrBoxedPrimitive(carrier.getComponentType());
+    }
+
+    public static MemorySegment convertArray(Object rawArray) {
+        if (rawArray == null) {
+            return MemorySegment.NULL;
+        }
+        Class<?> componentType = rawArray.getClass().getComponentType();
+        if (!componentType.isPrimitive()) {
+            componentType = toPrimitive(componentType);
+        }
+        if (componentType == boolean.class) {
+            throw new UnsupportedOperationException("boolean arrays are not convertible currently");
+        }
+        // allocation works in a generic way
+        final ValueLayout layout = (ValueLayout) createMemoryLayout(componentType);
+        final int arrLen = Array.getLength(rawArray);
+        final MemorySegment alloc = SegmentAllocator.nativeAllocator(SegmentScope.auto()).allocateArray(layout, arrLen);
+        // the following will not be nice but FFMA is just not generic enough
+        // copying from on-heap to off-heap is necessary though
+        // TODO architecture change: treat arrays as pointers and dynamically allow bi-directional conversion
+        // TODO architecture change: create some sort of framework that automates all conversion like the current ITypeConverters
+        //      but also with primitives. memory layout etc
+        try {
+            final Method setMethod = MemorySegment.class.getMethod("set", layout.getClass().getInterfaces()[0], long.class, componentType);
+            for (int i = 0; i < arrLen; i++) {
+                setMethod.invoke(alloc, layout, i * layout.byteAlignment(), Array.get(rawArray, i));
+            }
+        } catch (ReflectiveOperationException ex) {
+            throw new NativeException("Failed to allocate array", ex);
+        }
+        return alloc;
+    }
+
+    public static Class<?> toPrimitive(Class<?> wrapper) {
+        if (wrapper == boolean.class || wrapper == Boolean.class) {
+            return boolean.class;
+        } else if (wrapper == byte.class || wrapper == Byte.class) {
+            return byte.class;
+        } else if (wrapper == short.class || wrapper == Short.class) {
+            return short.class;
+        } else if (wrapper == char.class || wrapper == Character.class) {
+            return char.class;
+        } else if (wrapper == int.class || wrapper == Integer.class) {
+            return int.class;
+        } else if (wrapper == long.class || wrapper == Long.class) {
+            return long.class;
+        } else if (wrapper == float.class || wrapper == Float.class) {
+            return float.class;
+        } else if (wrapper == double.class || wrapper == Double.class) {
+            return double.class;
+        } else {
+            throw new NativeException("Carrier is not a java primitive or boxed primitive: " + wrapper.getClass().getCanonicalName());
+        }
     }
 
     public static MemoryLayout createForPrimitiveOrWrapper(Class<?> carrier) {
