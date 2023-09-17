@@ -38,7 +38,7 @@ public final class StructureUtils {
                         final Structure.FieldInfo fieldInfo = new Structure.FieldInfo(f,
                                 layout.varHandle(MemoryLayout.PathElement.groupElement(f.getName())),
                                 MethodHandles.privateLookupIn(structClass, MethodHandles.lookup())
-                                        .unreflectVarHandle(f), Panama.getConverters().getConverterInstance(f.getType()));
+                                        .unreflectVarHandle(f), Panama.getNewConverters().getConverterInstance(f.getType()));
                         fieldInfos.put(f, fieldInfo);
                     } catch (IllegalAccessException ex) {
                         throw new NativeException("Failed to get var handle for field: " + f, ex);

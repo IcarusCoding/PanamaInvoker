@@ -1,25 +1,28 @@
 package de.intelligence.panamainvokerv4.invoker;
 
 import java.lang.annotation.Annotation;
+import java.lang.foreign.SegmentAllocator;
+import java.lang.foreign.SegmentScope;
 import java.util.HashMap;
 import java.util.Map;
 
-import de.intelligence.panamainvokerv4.invoker.convert.DefaultTypeConverters;
-import de.intelligence.panamainvokerv4.invoker.convert.ITypeConverters;
 import de.intelligence.panamainvokerv4.invoker.exception.NativeException;
 import de.intelligence.panamainvokerv4.invoker.proxy.IProxyManager;
 import de.intelligence.panamainvokerv4.invoker.reflection.ReflectionUtils;
+import de.intelligence.panamainvokerv4.invoker.converter.DefaultConverterRegistry;
+import de.intelligence.panamainvokerv4.invoker.converter.ITypeConverterRegistry;
 
 public final class Panama {
 
     private static final Map<Class<? extends Annotation>, IProxyManager> MANAGERS;
-    private static final ITypeConverters DEFAULT_CONVERTERS = new DefaultTypeConverters();
+    private static final ITypeConverterRegistry DEFAULT_CONVERTERS = new DefaultConverterRegistry();
 
     static {
         MANAGERS = new HashMap<>();
     }
 
-    private Panama() {}
+    private Panama() {
+    }
 
     // load by using caller class
     @SuppressWarnings("unchecked")
@@ -42,8 +45,12 @@ public final class Panama {
         return interfaceClass.cast(proxyManager.createProxy(interfaceClass));
     }
 
-    public static ITypeConverters getConverters() {
+    public static ITypeConverterRegistry getNewConverters() {
         return DEFAULT_CONVERTERS;
+    }
+
+    public static SegmentAllocator getNativeAllocator() {
+        return SegmentAllocator.nativeAllocator(SegmentScope.auto());
     }
 
 }

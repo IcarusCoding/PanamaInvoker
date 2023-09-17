@@ -12,11 +12,12 @@ import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
 
-import de.intelligence.panamainvokerv4.invoker.convert.TypeConverter;
 import de.intelligence.panamainvokerv4.invoker.exception.NativeException;
 import de.intelligence.panamainvokerv4.invoker.update.UpdatePolicy;
 import de.intelligence.panamainvokerv4.invoker.util.ConversionUtils;
 import de.intelligence.panamainvokerv4.invoker.util.StructureUtils;
+import de.intelligence.panamainvokerv4.invoker.converter.ITypeConverter;
+import de.intelligence.panamainvokerv4.invoker.converter.context.TypeConstructionContext;
 
 public abstract class Structure implements IStructure {
 
@@ -30,7 +31,7 @@ public abstract class Structure implements IStructure {
     public @interface ByReference {
     }
 
-    public record FieldInfo(Field field, VarHandle nativeHandle, VarHandle javaHandle, TypeConverter converter) {
+    public record FieldInfo(Field field, VarHandle nativeHandle, VarHandle javaHandle, ITypeConverter converter) {
     }
 
     public record StructureInfo(StructLayout layout, Map<Field, FieldInfo> fields) {
@@ -71,10 +72,10 @@ public abstract class Structure implements IStructure {
             return;
         }
         for (FieldInfo(
-                Field field, VarHandle nativeHandle, VarHandle javaHandle, TypeConverter converter
+                Field field, VarHandle nativeHandle, VarHandle javaHandle, ITypeConverter converter
         ) : this.structureInfo.fields.values()) {
             if (converter != null) {
-                javaHandle.set(this, converter.toJava(nativeHandle.get(this.structMem.getSegment())));
+                javaHandle.set(this, converter.toJava(nativeHandle.get(this.structMem.getSegment()), new TypeConstructionContext(field.getType())));
                 continue;
             }
             if (!ConversionUtils.isPrimitiveOrBoxedPrimitive(field.getType())) {
@@ -90,10 +91,10 @@ public abstract class Structure implements IStructure {
             return;
         }
         for (FieldInfo(
-                Field field, VarHandle nativeHandle, VarHandle javaHandle, TypeConverter converter
+                Field field, VarHandle nativeHandle, VarHandle javaHandle, ITypeConverter converter
         ) : this.structureInfo.fields.values()) {
             if (converter != null) {
-                nativeHandle.set(this.structMem.getSegment(), converter.toNative(javaHandle.get(this)));
+                nativeHandle.set(this.structMem.getSegment(), converter.toNative(javaHandle.get(this), new TypeConstructionContext(field.getType())));
             }
             if (!ConversionUtils.isPrimitiveOrBoxedPrimitive(field.getType())) {
                 throw new NativeException("Cannot convert between java type " + field.getType().getCanonicalName() + " and native type");

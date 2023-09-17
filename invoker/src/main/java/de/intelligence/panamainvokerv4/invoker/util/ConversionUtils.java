@@ -1,14 +1,8 @@
 package de.intelligence.panamainvokerv4.invoker.util;
 
 import java.lang.foreign.MemoryLayout;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.SegmentAllocator;
-import java.lang.foreign.SegmentScope;
 import java.lang.foreign.StructLayout;
-import java.lang.foreign.ValueLayout;
-import java.lang.reflect.Array;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -20,9 +14,8 @@ import java.util.stream.Collectors;
 import de.intelligence.panamainvokerv4.invoker.Panama;
 import de.intelligence.panamainvokerv4.invoker.annotation.FieldOrder;
 import de.intelligence.panamainvokerv4.invoker.annotation.NativeStruct;
-import de.intelligence.panamainvokerv4.invoker.convert.TypeConverter;
 import de.intelligence.panamainvokerv4.invoker.exception.NativeException;
-import de.intelligence.panamainvokerv4.invoker.type.NativeType;
+import de.intelligence.panamainvokerv4.invoker.converter.context.TypeConstructionContext;
 
 public final class ConversionUtils {
 
@@ -42,9 +35,7 @@ public final class ConversionUtils {
     }
 
     public static boolean isTypeSupported(Class<?> clazz) {
-        return isPrimitiveOrBoxedPrimitive(clazz) || isNativeType(clazz)
-                || Panama.getConverters().getConverterInstance(clazz) != null || isSupportedArray(clazz)
-                || clazz.equals(Object.class);
+        return Panama.getNewConverters().isConverterAvailable(clazz) || clazz == Object.class;
     }
 
     public static StructLayout convertStruct(Class<?> struct) {
@@ -109,10 +100,6 @@ public final class ConversionUtils {
         return type.isAnnotationPresent(NativeStruct.class);
     }
 
-    private static boolean isNativeType(Class<?> carrier) {
-        return NativeType.class.isAssignableFrom(carrier);
-    }
-
     public static boolean isBoxedPrimitive(Class<?> type) {
         return type == Integer.class ||
                 type == Long.class ||
@@ -125,17 +112,7 @@ public final class ConversionUtils {
     }
 
     public static MemoryLayout createMemoryLayout(Class<?> carrier) {
-        if (isPrimitiveOrBoxedPrimitive(carrier)) {
-            return createForPrimitiveOrWrapper(carrier);
-        }
-        if (isSupportedArray(carrier)) {
-            return ValueLayout.ADDRESS;
-        }
-        final TypeConverter converter = Panama.getConverters().getConverterInstance(carrier);
-        if (converter != null) {
-            return converter.getLayout();
-        }
-        throw new NativeException("Failed to convert carrier to native layout representation: " + carrier.getCanonicalName());
+        return Panama.getNewConverters().getNativeMemoryLayout(carrier);
     }
 
     public static Object convertArg(Object arg) {
@@ -143,15 +120,7 @@ public final class ConversionUtils {
             return null;
         }
         final Class<?> argType = arg.getClass();
-        final TypeConverter converter = Panama.getConverters().getConverterInstance(argType);
-        if (converter != null) {
-            return converter.toNative(arg);
-        } else if (ConversionUtils.isSupportedArray(argType)) {
-            return convertArray(arg);
-        } else if (!ConversionUtils.isPrimitiveOrBoxedPrimitive(argType)) {
-            throw new NativeException("Cannot convert java type " + argType.getCanonicalName() + " to native type");
-        }
-        return arg;
+        return Panama.getNewConverters().getConverterInstance(argType).toNative(arg, new TypeConstructionContext(argType));
     }
 
     public static Object[] convertArgs(Object[] args) {
@@ -167,91 +136,7 @@ public final class ConversionUtils {
     }
 
     public static Object convertReturnValue(Class<?> retType, Object retVal) {
-        final TypeConverter converter = Panama.getConverters().getConverterInstance(retType);
-        if (converter != null) {
-            return converter.toJava(retVal);
-        }
-        //TODO
-        return retVal;
-    }
-
-    public static boolean isSupportedArray(Class<?> carrier) {
-        return carrier.isArray() && isPrimitiveOrBoxedPrimitive(carrier.getComponentType());
-    }
-
-    public static MemorySegment convertArray(Object rawArray) {
-        if (rawArray == null) {
-            return MemorySegment.NULL;
-        }
-        Class<?> componentType = rawArray.getClass().getComponentType();
-        if (!componentType.isPrimitive()) {
-            componentType = toPrimitive(componentType);
-        }
-        if (componentType == boolean.class) {
-            throw new UnsupportedOperationException("boolean arrays are not convertible currently");
-        }
-        // allocation works in a generic way
-        final ValueLayout layout = (ValueLayout) createMemoryLayout(componentType);
-        final int arrLen = Array.getLength(rawArray);
-        final MemorySegment alloc = SegmentAllocator.nativeAllocator(SegmentScope.auto()).allocateArray(layout, arrLen);
-        // the following will not be nice but FFMA is just not generic enough
-        // copying from on-heap to off-heap is necessary though
-        // TODO architecture change: treat arrays as pointers and dynamically allow bi-directional conversion
-        // TODO architecture change: create some sort of framework that automates all conversion like the current ITypeConverters
-        //      but also with primitives. memory layout etc
-        try {
-            final Method setMethod = MemorySegment.class.getMethod("set", layout.getClass().getInterfaces()[0], long.class, componentType);
-            for (int i = 0; i < arrLen; i++) {
-                setMethod.invoke(alloc, layout, i * layout.byteAlignment(), Array.get(rawArray, i));
-            }
-        } catch (ReflectiveOperationException ex) {
-            throw new NativeException("Failed to allocate array", ex);
-        }
-        return alloc;
-    }
-
-    public static Class<?> toPrimitive(Class<?> wrapper) {
-        if (wrapper == boolean.class || wrapper == Boolean.class) {
-            return boolean.class;
-        } else if (wrapper == byte.class || wrapper == Byte.class) {
-            return byte.class;
-        } else if (wrapper == short.class || wrapper == Short.class) {
-            return short.class;
-        } else if (wrapper == char.class || wrapper == Character.class) {
-            return char.class;
-        } else if (wrapper == int.class || wrapper == Integer.class) {
-            return int.class;
-        } else if (wrapper == long.class || wrapper == Long.class) {
-            return long.class;
-        } else if (wrapper == float.class || wrapper == Float.class) {
-            return float.class;
-        } else if (wrapper == double.class || wrapper == Double.class) {
-            return double.class;
-        } else {
-            throw new NativeException("Carrier is not a java primitive or boxed primitive: " + wrapper.getClass().getCanonicalName());
-        }
-    }
-
-    public static MemoryLayout createForPrimitiveOrWrapper(Class<?> carrier) {
-        if (carrier == boolean.class || carrier == Boolean.class) {
-            return ValueLayout.JAVA_BOOLEAN;
-        } else if (carrier == byte.class || carrier == Byte.class) {
-            return ValueLayout.JAVA_BYTE;
-        } else if (carrier == short.class || carrier == Short.class) {
-            return ValueLayout.JAVA_SHORT;
-        } else if (carrier == char.class || carrier == Character.class) {
-            return ValueLayout.JAVA_CHAR;
-        } else if (carrier == int.class || carrier == Integer.class) {
-            return ValueLayout.JAVA_INT;
-        } else if (carrier == long.class || carrier == Long.class) {
-            return ValueLayout.JAVA_LONG;
-        } else if (carrier == float.class || carrier == Float.class) {
-            return ValueLayout.JAVA_FLOAT;
-        } else if (carrier == double.class || carrier == Double.class) {
-            return ValueLayout.JAVA_DOUBLE;
-        } else {
-            throw new NativeException("Carrier is not a java primitive or boxed primitive: " + carrier.getCanonicalName());
-        }
+        return Panama.getNewConverters().getConverterInstance(retType).toJava(retVal, new TypeConstructionContext(retType));
     }
 
 }
